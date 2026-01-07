@@ -1,11 +1,13 @@
-import { Search, Download, Map as MapIcon, Satellite, Layers as LayersIcon } from 'lucide-react';
+import { Search, Download, Map as MapIcon, Satellite } from 'lucide-react';
+import { useState, KeyboardEvent } from 'react';
 
 interface MapControlsProps {
-  mapType: 'roadmap' | 'satellite' | 'hybrid';
-  onMapTypeChange: (type: 'roadmap' | 'satellite' | 'hybrid') => void;
+  mapType: 'roadmap' | 'satellite';
+  onMapTypeChange: (type: 'roadmap' | 'satellite') => void;
   showHeatmap: boolean;
   onToggleHeatmap: () => void;
   onExport: () => void;
+  onSearch: (query: string) => void;
 }
 
 export default function MapControls({
@@ -13,8 +15,27 @@ export default function MapControls({
   onMapTypeChange,
   showHeatmap,
   onToggleHeatmap,
-  onExport
+  onExport,
+  onSearch
 }: MapControlsProps) {
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const handleSearch = () => {
+    if (searchQuery.trim()) {
+      onSearch(searchQuery.trim());
+    }
+  };
+
+  const handleKeyPress = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
+  };
+
+  const toggleMapType = () => {
+    onMapTypeChange(mapType === 'roadmap' ? 'satellite' : 'roadmap');
+  };
+
   return (
     <div className="bg-white rounded-lg shadow-lg p-3 md:p-4">
       <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
@@ -22,9 +43,20 @@ export default function MapControls({
           <Search size={18} className="text-gray-400 mr-2" />
           <input
             type="text"
-            placeholder="Search bar"
+            placeholder="Search for an address..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyPress={handleKeyPress}
             className="flex-1 bg-transparent outline-none text-sm text-gray-700"
           />
+          {searchQuery && (
+            <button
+              onClick={handleSearch}
+              className="ml-2 px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded transition-colors"
+            >
+              Search
+            </button>
+          )}
         </div>
 
         <button
@@ -37,39 +69,21 @@ export default function MapControls({
 
         <div className="flex items-center gap-2 border-l border-gray-200 pl-3">
           <button
-            onClick={() => onMapTypeChange('roadmap')}
-            className={`p-2 rounded-lg transition-colors ${
-              mapType === 'roadmap'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
-            }`}
-            title="Roadmap"
+            onClick={toggleMapType}
+            className="flex items-center gap-2 px-3 py-2 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 text-sm text-gray-700 transition-colors"
+            title={mapType === 'roadmap' ? 'Switch to Satellite' : 'Switch to Roadmap'}
           >
-            <MapIcon size={20} />
-          </button>
-
-          <button
-            onClick={() => onMapTypeChange('satellite')}
-            className={`p-2 rounded-lg transition-colors ${
-              mapType === 'satellite'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
-            }`}
-            title="Satellite"
-          >
-            <Satellite size={20} />
-          </button>
-
-          <button
-            onClick={() => onMapTypeChange('hybrid')}
-            className={`p-2 rounded-lg transition-colors ${
-              mapType === 'hybrid'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
-            }`}
-            title="Hybrid"
-          >
-            <LayersIcon size={20} />
+            {mapType === 'roadmap' ? (
+              <>
+                <Satellite size={18} />
+                <span className="hidden sm:inline">Satellite</span>
+              </>
+            ) : (
+              <>
+                <MapIcon size={18} />
+                <span className="hidden sm:inline">Roadmap</span>
+              </>
+            )}
           </button>
 
           <button
@@ -86,13 +100,6 @@ export default function MapControls({
             </div>
           </button>
         </div>
-      </div>
-
-      <div className="mt-2 flex gap-2 text-xs text-gray-500 md:hidden">
-        <span>Roadmap</span>
-        <span>Satellite</span>
-        <span>Hybrid</span>
-        <span>Heatmap</span>
       </div>
     </div>
   );

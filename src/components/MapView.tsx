@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 
 interface MapViewProps {
-  mapType: 'roadmap' | 'satellite' | 'hybrid';
+  mapType: 'roadmap' | 'satellite';
   showHeatmap: boolean;
   visibleLayers: Set<string>;
+  searchQuery?: string;
   onMapReady?: (mapInstance: any) => void;
 }
 
@@ -26,16 +27,14 @@ const POINTS_DATA: Record<string, [number, number, string][]> = {
   ],
 }
 
-export default function MapView({ mapType, showHeatmap, visibleLayers, onMapReady }: MapViewProps) {
+export default function MapView({ mapType, showHeatmap, visibleLayers, searchQuery, onMapReady }: MapViewProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const layersRef = useRef<{ [key: string]: any }>({});
   const heatmapLayerRef = useRef<any>(null);
   const markerLayersRef = useRef<{ [key: string]: any}>({});
+  const searchMarkerRef = useRef<any>(null);
   const [, setMapReady] = useState(false);
-
-
-  
 
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
@@ -51,21 +50,9 @@ export default function MapView({ mapType, showHeatmap, visibleLayers, onMapRead
       attribution: '© Esri'
     });
 
-    const hybridLayer = window.L.layerGroup([
-      window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        attribution: '© Esri'
-      }),
-      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        opacity: 0.3
-      })
-    ]);
-
-    // map.marker([51.5, -0.09]).addTo(map)
-
     layersRef.current = {
       roadmap: roadmapLayer,
-      satellite: satelliteLayer,
-      hybrid: hybridLayer
+      satellite: satelliteLayer
     };
 
     roadmapLayer.addTo(map);
@@ -156,12 +143,44 @@ export default function MapView({ mapType, showHeatmap, visibleLayers, onMapRead
     }
   });
 
-}, [visibleLayers]); // Executa sempre que as camadas visíveis mudarem
+}, [visibleLayers]);
+
+  useEffect(() => {
+    if (!mapInstanceRef.current || !searchQuery) return;
+
+    const geocodeAddress = async () => {
+      try {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=1`
+        );
+        const data = await response.json();
+
+        if (data && data.length > 0) {
+          const { lat, lon, display_name } = data[0];
+          const latNum = parseFloat(lat);
+          const lonNum = parseFloat(lon);
+
+          mapInstanceRef.current.setView([latNum, lonNum], 15);
+
+          if (searchMarkerRef.current) {
+            mapInstanceRef.current.removeLayer(searchMarkerRef.current);
+          }
+
+          searchMarkerRef.current = window.L.marker([latNum, lonNum])
+            .addTo(mapInstanceRef.current)
+            .bindPopup(`<b>Search Result</b><br>${display_name}`)
+            .openPopup();
+        }
+      } catch (error) {
+        console.error('Geocoding error:', error);
+      }
+    };
+
+    geocodeAddress();
+  }, [searchQuery]);
 
   return (
     <div ref={mapRef} className="w-full h-full" />
   );
-
-  
 }
 

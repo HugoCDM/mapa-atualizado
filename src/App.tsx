@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Minus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Minus, Home } from 'lucide-react';
 import MapView from './components/MapView';
 import LayersPanel from './components/LayersPanel';
 import MapControls from './components/MapControls';
@@ -44,6 +44,12 @@ function App() {
     }
   };
 
+  const handleHome = () => {
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.setView([51.505, -0.09], 13);
+    }
+  };
+
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden">
       <div className="flex-1 flex flex-col md:flex-row gap-3 p-3 overflow-hidden">
@@ -80,13 +86,22 @@ function App() {
             <div className="absolute bottom-4 right-4 z-[1000] flex flex-col gap-2">
               <button
                 className="bg-white hover:bg-gray-100 p-2 rounded-lg shadow-lg transition-colors"
+                onClick={handleHome}
+                title="Return to home view"
+              >
+                <Home size={20} />
+              </button>
+              <button
+                className="bg-white hover:bg-gray-100 p-2 rounded-lg shadow-lg transition-colors"
                 onClick={handleZoomIn}
+                title="Zoom in"
               >
                 <Plus size={20} />
               </button>
               <button
                 className="bg-white hover:bg-gray-100 p-2 rounded-lg shadow-lg transition-colors"
                 onClick={handleZoomOut}
+                title="Zoom out"
               >
                 <Minus size={20} />
               </button>

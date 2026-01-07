@@ -17,14 +17,29 @@ if (typeof window !== 'undefined' && window.L) {
   });}
 
 const POINTS_DATA: Record<string, [number, number, string][]> = {
-  'Hotels': [
+  'hotels': [
     [51.505, -0.09, "Hotel Conforto"],
-    [51.51, -0.1, "Hotel Luxo"]
+    [51.51, -0.1, "Hotel Luxo"],
+    [51.495, -0.105, "Budget Inn"],
+    [51.515, -0.085, "Grand Plaza"]
   ],
-  'Education': [
+  'education': [
     [51.49, -0.08, "Universidade de Londres"],
-    [51.52, -0.12, "Escola Técnica"]
+    [51.52, -0.12, "Escola Técnica"],
+    [51.505, -0.15, "Central Academy"],
+    [51.48, -0.1, "Language Institute"]
   ],
+  'restaurants': [
+    [51.508, -0.095, "The Modern Brasserie"],
+    [51.502, -0.085, "London Fish & Chips"],
+    [51.512, -0.105, "Café Europa"],
+    [51.49, -0.075, "Garden Restaurant"]
+  ],
+  'parks': [
+    [51.525, -0.1, "Central Green Park"],
+    [51.48, -0.08, "Riverside Park"],
+    [51.5, -0.12, "Botanical Gardens"]
+  ]
 }
 
 export default function MapView({ mapType, showHeatmap, visibleLayers, searchQuery, onMapReady }: MapViewProps) {

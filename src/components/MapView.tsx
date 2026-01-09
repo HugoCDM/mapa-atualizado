@@ -9,6 +9,7 @@ interface MapViewProps {
   onMapReady?: (mapInstance: any) => void;
 }
 
+<<<<<<< HEAD
 interface LocationData {
   id: string;
   endereco: string;
@@ -80,15 +81,56 @@ const POINTS_DATA: Record<string, [number, number, string][]> = {
   ]
 };
 
+=======
+if (typeof window !== 'undefined' && window.L) {
+  delete (window.L.Icon.Default.prototype as any)._getIconUrl;
+  window.L.Icon.Default.mergeOptions({
+    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+  });}
+
+const POINTS_DATA: Record<string, [number, number, string][]> = {
+  'hotels': [
+    [51.505, -0.09, "Hotel Conforto"],
+    [51.51, -0.1, "Hotel Luxo"],
+    [51.495, -0.105, "Budget Inn"],
+    [51.515, -0.085, "Grand Plaza"]
+  ],
+  'education': [
+    [51.49, -0.08, "Universidade de Londres"],
+    [51.52, -0.12, "Escola Técnica"],
+    [51.505, -0.15, "Central Academy"],
+    [51.48, -0.1, "Language Institute"]
+  ],
+  'restaurants': [
+    [51.508, -0.095, "The Modern Brasserie"],
+    [51.502, -0.085, "London Fish & Chips"],
+    [51.512, -0.105, "Café Europa"],
+    [51.49, -0.075, "Garden Restaurant"]
+  ],
+  'parks': [
+    [51.525, -0.1, "Central Green Park"],
+    [51.48, -0.08, "Riverside Park"],
+    [51.5, -0.12, "Botanical Gardens"]
+  ]
+}
+
+>>>>>>> 742f2f870ce7cb25cc4b22fdc9330df3dbf979d4
 export default function MapView({ mapType, showHeatmap, visibleLayers, searchQuery, onMapReady }: MapViewProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const layersRef = useRef<{ [key: string]: any }>({});
   const heatmapLayerRef = useRef<any>(null);
+<<<<<<< HEAD
   const markerLayersRef = useRef<{ [key: string]: any }>({});
   const supabaseMarkersRef = useRef<any>(null);
   const searchMarkerRef = useRef<any>(null);
   const proximityMarkerRef = useRef<any>(null);
+=======
+  const markerLayersRef = useRef<{ [key: string]: any}>({});
+  const searchMarkerRef = useRef<any>(null);
+>>>>>>> 742f2f870ce7cb25cc4b22fdc9330df3dbf979d4
   const [, setMapReady] = useState(false);
   const [locationData, setLocationData] = useState<LocationData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,7 +144,10 @@ export default function MapView({ mapType, showHeatmap, visibleLayers, searchQue
   const lastFetchRef = useRef<{ lat: number; lng: number } | null>(null);
   const proximityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+<<<<<<< HEAD
   // Buscar dados do Supabase
+=======
+>>>>>>> 742f2f870ce7cb25cc4b22fdc9330df3dbf979d4
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -379,11 +424,15 @@ export default function MapView({ mapType, showHeatmap, visibleLayers, searchQue
           marker.addTo(markersGroup);
         });
 
+<<<<<<< HEAD
         markersGroup.addTo(mapInstanceRef.current);
         markerLayersRef.current[layerKey] = markersGroup;
       }
     });
   }, [visibleLayers]);
+=======
+}, [visibleLayers]);
+>>>>>>> 742f2f870ce7cb25cc4b22fdc9330df3dbf979d4
 
   useEffect(() => {
     if (!mapInstanceRef.current || !searchQuery) return;
@@ -478,4 +527,9 @@ export default function MapView({ mapType, showHeatmap, visibleLayers, searchQue
       )}
     </div>
   );
+<<<<<<< HEAD
 }
+=======
+}
+
+>>>>>>> 742f2f870ce7cb25cc4b22fdc9330df3dbf979d4

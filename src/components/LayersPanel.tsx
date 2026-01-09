@@ -22,12 +22,14 @@ const layersData: Layer[] = [
         id: 'general-city',
         name: 'General City Information',
         children: [
-          { id: 'hotels', name: 'Hotels' },
+          { id: 'hotels', name: 'Hotels', color: 'bg-blue-500' },
+          { id: 'education', name: 'Education', color: 'bg-red-500' },
+          { id: 'restaurants', name: 'Restaurants', color: 'bg-orange-500' },
+          { id: 'parks', name: 'Parks', color: 'bg-green-500' },
           { id: 'residential-units', name: 'Residential Units' },
           { id: 'commercial-units', name: 'Commercial Units' },
           { id: 'retail-units', name: 'Retail Units' },
-          { id: 'education', name: 'Education', color: 'bg-red-500' },
-          { id: 'places-interest', name: 'Places of Interest', color: 'bg-green-500' },
+          { id: 'places-interest', name: 'Places of Interest' },
           { id: 'post-office', name: 'Post Office', color: 'bg-red-600' },
         ]
       }

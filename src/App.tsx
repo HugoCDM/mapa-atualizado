@@ -46,11 +46,7 @@ function App() {
 
   const handleHome = () => {
     if (mapInstanceRef.current) {
-<<<<<<< HEAD
-      mapInstanceRef.current.setView([-22.909427, -43.442134], 11);
-=======
       mapInstanceRef.current.setView([51.505, -0.09], 13);
->>>>>>> 742f2f870ce7cb25cc4b22fdc9330df3dbf979d4
     }
   };
 

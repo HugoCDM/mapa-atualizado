@@ -1,15 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
-interface MapViewProps {
-  mapType: 'roadmap' | 'satellite';
-  showHeatmap: boolean;
-  visibleLayers: Set<string>;
-  searchQuery?: string;
-  onMapReady?: (mapInstance: any) => void;
-}
-
-<<<<<<< HEAD
 interface LocationData {
   id: string;
   endereco: string;
@@ -19,7 +10,10 @@ interface LocationData {
   longitude: number;
   tipoDeUso: string;
   tituloDoProjetо: string;
+  construtora: string;
   status: string;
+  licenca: string;
+  dataLicenca: string;
   [key: string]: any;
 }
 
@@ -30,65 +24,22 @@ interface ProximityData {
   loading: boolean;
 }
 
-// Criar ícones customizados e leves
-const createIcon = (color: string) => {
-  const html = `
-    <svg width="28" height="32" viewBox="0 0 28 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <!-- Telhado -->
-      <path d="M14 2L2 12H4V28H24V12H26L14 2Z" fill="${color}" stroke="white" stroke-width="1.5"/>
-      <!-- Porta -->
-      <rect x="11" y="18" width="6" height="10" fill="white" stroke="white" stroke-width="1"/>
-      <!-- Maçaneta -->
-      <circle cx="16.5" cy="23" r="0.8" fill="${color}"/>
-      <!-- Janelas -->
-      <rect x="6" y="14" width="3" height="3" fill="white" stroke="white" stroke-width="0.8"/>
-      <rect x="19" y="14" width="3" height="3" fill="white" stroke="white" stroke-width="0.8"/>
-    </svg>
-  `;
+interface MapViewProps {
+  mapType: 'roadmap' | 'satellite';
+  showHeatmap: boolean;
+  visibleLayers: Set<string>;
+  searchQuery?: string;
+  onMapReady?: (mapInstance: any) => void;
+}
 
-  return window.L?.divIcon({
-    html,
-    iconSize: [28, 32],
-    iconAnchor: [14, 32],
-    popupAnchor: [0, -32],
-    className: 'custom-icon'
-  });
-};
-
-const POINTS_DATA: Record<string, [number, number, string][]> = {
-  'hotels': [
-    [51.505, -0.09, "Hotel Conforto"],
-    [51.51, -0.1, "Hotel Luxo"],
-    [51.495, -0.105, "Budget Inn"],
-    [51.515, -0.085, "Grand Plaza"]
-  ],
-  'education': [
-    [51.49, -0.08, "Universidade de Londres"],
-    [51.52, -0.12, "Escola Técnica"],
-    [51.505, -0.15, "Central Academy"],
-    [51.48, -0.1, "Language Institute"]
-  ],
-  'restaurants': [
-    [51.508, -0.095, "The Modern Brasserie"],
-    [51.502, -0.085, "London Fish & Chips"],
-    [51.512, -0.105, "Café Europa"],
-    [51.49, -0.075, "Garden Restaurant"]
-  ],
-  'parks': [
-    [51.525, -0.1, "Central Green Park"],
-    [51.48, -0.08, "Riverside Park"],
-    [51.5, -0.12, "Botanical Gardens"]
-  ]
-};
-
-=======
 if (typeof window !== 'undefined' && window.L) {
   delete (window.L.Icon.Default.prototype as any)._getIconUrl;
   window.L.Icon.Default.mergeOptions({
     iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
     iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-  });}
+  });
+}
 
 const POINTS_DATA: Record<string, [number, number, string][]> = {
   'hotels': [
@@ -114,23 +65,26 @@ const POINTS_DATA: Record<string, [number, number, string][]> = {
     [51.48, -0.08, "Riverside Park"],
     [51.5, -0.12, "Botanical Gardens"]
   ]
-}
+};
 
->>>>>>> 742f2f870ce7cb25cc4b22fdc9330df3dbf979d4
+const createIcon = (color: string) => {
+  return window.L.divIcon({
+    html: `<div style="background-color: ${color}; width: 30px; height: 30px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2);"></div>`,
+    iconSize: [30, 30],
+    className: 'custom-icon'
+  });
+};
+
 export default function MapView({ mapType, showHeatmap, visibleLayers, searchQuery, onMapReady }: MapViewProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const layersRef = useRef<{ [key: string]: any }>({});
   const heatmapLayerRef = useRef<any>(null);
-<<<<<<< HEAD
-  const markerLayersRef = useRef<{ [key: string]: any }>({});
-  const supabaseMarkersRef = useRef<any>(null);
-  const searchMarkerRef = useRef<any>(null);
-  const proximityMarkerRef = useRef<any>(null);
-=======
   const markerLayersRef = useRef<{ [key: string]: any}>({});
   const searchMarkerRef = useRef<any>(null);
->>>>>>> 742f2f870ce7cb25cc4b22fdc9330df3dbf979d4
+  const supabaseMarkersRef = useRef<any>(null);
+  const proximityMarkerRef = useRef<any>(null);
+  
   const [, setMapReady] = useState(false);
   const [locationData, setLocationData] = useState<LocationData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -144,10 +98,6 @@ export default function MapView({ mapType, showHeatmap, visibleLayers, searchQue
   const lastFetchRef = useRef<{ lat: number; lng: number } | null>(null);
   const proximityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-<<<<<<< HEAD
-  // Buscar dados do Supabase
-=======
->>>>>>> 742f2f870ce7cb25cc4b22fdc9330df3dbf979d4
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -191,9 +141,8 @@ export default function MapView({ mapType, showHeatmap, visibleLayers, searchQue
     fetchData();
   }, []);
 
-  // Função para calcular distância entre dois pontos (Haversine)
   const calcDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371000; // Raio da Terra em metros
+    const R = 6371000;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
@@ -204,57 +153,59 @@ export default function MapView({ mapType, showHeatmap, visibleLayers, searchQue
   };
 
   const fetchProximityData = async (lat: number, lng: number) => {
-    setProximityData(prev => ({ ...prev, loading: true }));
-
-    try {
-      // Buscar escolas do Supabase
-      const { data: escolas } = await supabase
-        .from('escolas_municipais')
-        .select('latitude,longitude')
-        .not('latitude', 'is', null)
-        .not('longitude', 'is', null);
-
-      let distanciaEscola = 5000;
-      if (escolas && escolas.length > 0) {
-        const distances = escolas.map(e => calcDistance(lat, lng, e.latitude, e.longitude));
-        distanciaEscola = Math.min(...distances);
-      }
-
-      // Buscar estações (usando Nominatim)
-      const metroRes = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=train%20station&lat=${lat}&lon=${lng}&radius=3000&format=json&limit=1`
-      ).catch(() => ({ json: async () => [] }));
-      
-      const metroData = await metroRes.json();
-      let distanciaMetro = 5000;
-      if (metroData.length > 0) {
-        distanciaMetro = calcDistance(lat, lng, parseFloat(metroData[0].lat), parseFloat(metroData[0].lon));
-      }
-
-      // Buscar hospitais (usando Nominatim)
-      const hospitalRes = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=hospital&lat=${lat}&lon=${lng}&radius=2000&format=json&limit=1`
-      ).catch(() => ({ json: async () => [] }));
-      
-      const hospitalData = await hospitalRes.json();
-      let distanciaHospital = 5000;
-      if (hospitalData.length > 0) {
-        distanciaHospital = calcDistance(lat, lng, parseFloat(hospitalData[0].lat), parseFloat(hospitalData[0].lon));
-      }
-
-      setProximityData({
-        escola: Math.round(distanciaEscola),
-        metro: Math.round(distanciaMetro),
-        hospital: Math.round(distanciaHospital),
-        loading: false
-      });
-    } catch (error) {
-      console.error('Erro ao buscar proximidade:', error);
-      setProximityData(prev => ({ ...prev, loading: false }));
+    if (proximityTimeoutRef.current) {
+      clearTimeout(proximityTimeoutRef.current);
     }
+
+    proximityTimeoutRef.current = setTimeout(async () => {
+      setProximityData(prev => ({ ...prev, loading: true }));
+
+      try {
+        const { data: escolas } = await supabase
+          .from('escolas_municipais')
+          .select('latitude,longitude')
+          .not('latitude', 'is', null)
+          .not('longitude', 'is', null);
+
+        let distanciaEscola = 5000;
+        if (escolas && escolas.length > 0) {
+          const distances = escolas.map((e: any) => calcDistance(lat, lng, e.latitude, e.longitude));
+          distanciaEscola = Math.min(...distances);
+        }
+
+        const metroRes = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=train%20station&lat=${lat}&lon=${lng}&radius=3000&format=json&limit=1`
+        ).catch(() => ({ json: async () => [] }));
+        
+        const metroData = await metroRes.json();
+        let distanciaMetro = 5000;
+        if (Array.isArray(metroData) && metroData.length > 0) {
+          distanciaMetro = calcDistance(lat, lng, parseFloat(metroData[0].lat), parseFloat(metroData[0].lon));
+        }
+
+        const hospitalRes = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=hospital&lat=${lat}&lon=${lng}&radius=2000&format=json&limit=1`
+        ).catch(() => ({ json: async () => [] }));
+        
+        const hospitalData = await hospitalRes.json();
+        let distanciaHospital = 5000;
+        if (Array.isArray(hospitalData) && hospitalData.length > 0) {
+          distanciaHospital = calcDistance(lat, lng, parseFloat(hospitalData[0].lat), parseFloat(hospitalData[0].lon));
+        }
+
+        setProximityData({
+          escola: Math.round(distanciaEscola),
+          metro: Math.round(distanciaMetro),
+          hospital: Math.round(distanciaHospital),
+          loading: false
+        });
+      } catch (error) {
+        console.error('Erro ao buscar proximidade:', error);
+        setProximityData(prev => ({ ...prev, loading: false }));
+      }
+    }, 300);
   };
 
-  // Inicializar mapa
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current || !window.L) return;
 
@@ -278,7 +229,6 @@ export default function MapView({ mapType, showHeatmap, visibleLayers, searchQue
     setMapReady(true);
     onMapReady?.(map);
 
-    // Adicionar evento de mousemove ao mapa
     map.on('mousemove', (e: any) => {
       setMousePos({
         lat: e.latlng.lat,
@@ -317,16 +267,13 @@ export default function MapView({ mapType, showHeatmap, visibleLayers, searchQue
     };
   }, []);
 
-  // Adicionar markers do Supabase com clustering para melhor performance
   useEffect(() => {
     if (!mapInstanceRef.current || locationData.length === 0) return;
 
-    // Remover markers antigos
     if (supabaseMarkersRef.current) {
       mapInstanceRef.current.removeLayer(supabaseMarkersRef.current);
     }
 
-    // Usar FeatureGroup para melhor performance
     const markersGroup = window.L.featureGroup();
 
     locationData.forEach((location) => {
@@ -424,15 +371,11 @@ export default function MapView({ mapType, showHeatmap, visibleLayers, searchQue
           marker.addTo(markersGroup);
         });
 
-<<<<<<< HEAD
         markersGroup.addTo(mapInstanceRef.current);
         markerLayersRef.current[layerKey] = markersGroup;
       }
     });
   }, [visibleLayers]);
-=======
-}, [visibleLayers]);
->>>>>>> 742f2f870ce7cb25cc4b22fdc9330df3dbf979d4
 
   useEffect(() => {
     if (!mapInstanceRef.current || !searchQuery) return;
@@ -527,9 +470,4 @@ export default function MapView({ mapType, showHeatmap, visibleLayers, searchQue
       )}
     </div>
   );
-<<<<<<< HEAD
 }
-=======
-}
-
->>>>>>> 742f2f870ce7cb25cc4b22fdc9330df3dbf979d4

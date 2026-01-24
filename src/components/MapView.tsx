@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { useEffect, useMemo, useRef, useState } from 'react';
+
+const API_URL = import.meta.env.VITE_API_URL;
 
 interface LocationData {
   id: string;
@@ -18,9 +19,9 @@ interface LocationData {
 }
 
 interface ProximityData {
-  escola: number;
-  metro: number;
-  hospital: number;
+  escola: number | null;
+  altaCapacidade: number | null;
+  hospital: number | null;
   loading: boolean;
 }
 
@@ -32,6 +33,52 @@ interface MapViewProps {
   onMapReady?: (mapInstance: any) => void;
 }
 
+
+
+async function fetchFromAPI<T>(endpoint: string): Promise<T | null> {
+  try {
+    const response = await fetch(`${API_URL}${endpoint}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    return data.data || data;
+  } catch (error) {
+    console.error(`Erro ao buscar ${endpoint}:`, error);
+    return null;
+  }
+}
+
+const fetchWithCache = async (endpoint: string, cacheKey: string) => {
+    const cached = localStorage.getItem(cacheKey)
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (parsed) return parsed;
+  }
+    
+    const data = await fetchFromAPI(endpoint)
+    if (data) {
+      localStorage.setItem(cacheKey, JSON.stringify(data));
+    }
+    return data
+  }
+
+// Carregar Leaflet.markercluster CSS
+if (typeof window !== 'undefined') {
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.4.1/MarkerCluster.css';
+  document.head.appendChild(link);
+  
+  const link2 = document.createElement('link');
+  link2.rel = 'stylesheet';
+  link2.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.4.1/MarkerCluster.Default.css';
+  document.head.appendChild(link2);
+
+  // Carregar script de clustering
+  const script = document.createElement('script');
+  script.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.4.1/leaflet.markercluster.js';
+  document.body.appendChild(script);
+}
+
 if (typeof window !== 'undefined' && window.L) {
   delete (window.L.Icon.Default.prototype as any)._getIconUrl;
   window.L.Icon.Default.mergeOptions({
@@ -41,38 +88,88 @@ if (typeof window !== 'undefined' && window.L) {
   });
 }
 
-const POINTS_DATA: Record<string, [number, number, string][]> = {
-  'hotels': [
-    [51.505, -0.09, "Hotel Conforto"],
-    [51.51, -0.1, "Hotel Luxo"],
-    [51.495, -0.105, "Budget Inn"],
-    [51.515, -0.085, "Grand Plaza"]
-  ],
-  'education': [
-    [51.49, -0.08, "Universidade de Londres"],
-    [51.52, -0.12, "Escola Técnica"],
-    [51.505, -0.15, "Central Academy"],
-    [51.48, -0.1, "Language Institute"]
-  ],
-  'restaurants': [
-    [51.508, -0.095, "The Modern Brasserie"],
-    [51.502, -0.085, "London Fish & Chips"],
-    [51.512, -0.105, "Café Europa"],
-    [51.49, -0.075, "Garden Restaurant"]
-  ],
-  'parks': [
-    [51.525, -0.1, "Central Green Park"],
-    [51.48, -0.08, "Riverside Park"],
-    [51.5, -0.12, "Botanical Gardens"]
-  ]
+
+const createIcon = (color: string, emoji?: string) => {
+  if (emoji) {
+    // Retornar com emoji
+    return window.L.divIcon({
+      html: `<div style="font-size: 30px; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">${emoji}</div>`,
+      iconSize: [40, 40],
+      className: 'custom-icon'
+    });
+  } else {
+    // Retornar com ponto colorido
+    return window.L.divIcon({
+      html: `<div style="background-color: ${color}; width: 15px; height: 15px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);"></div>`,
+      iconSize: [30, 30],
+      className: 'custom-icon'
+    });
+  }
+};
+const calcDistance = (
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+) => {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) *
+      Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) ** 2;
+
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 };
 
-const createIcon = (color: string) => {
-  return window.L.divIcon({
-    html: `<div style="background-color: ${color}; width: 30px; height: 30px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2);"></div>`,
-    iconSize: [30, 30],
-    className: 'custom-icon'
-  });
+
+
+const getMinDistanceFromData = (
+  lat: number,
+  lng: number,
+  data: { latitude: number; longitude: number }[],
+  fallbackDistance = 5000
+): number => {
+  // latitude/longitude inválidas → retorna fallback
+  if (
+    typeof lat !== 'number' ||
+    typeof lng !== 'number' ||
+    isNaN(lat) ||
+    isNaN(lng)
+  ) {
+    return fallbackDistance;
+  }
+
+  // dataset inválido → retorna fallback
+  if (!Array.isArray(data) || data.length === 0) {
+    return fallbackDistance;
+  }
+
+  let minDistance = fallbackDistance;
+  let foundValidPoint = false;
+
+  for (const item of data) {
+    if (
+      typeof item.latitude !== 'number' ||
+      typeof item.longitude !== 'number' ||
+      isNaN(item.latitude) ||
+      isNaN(item.longitude)
+    ) continue;
+
+    const distance = calcDistance(lat, lng, item.latitude, item.longitude);
+
+    if (distance > 0 && distance < minDistance) {
+      minDistance = distance;
+      foundValidPoint = true;
+    }
+  }
+
+  return foundValidPoint
+    ? Math.round(minDistance)
+    : fallbackDistance;
 };
 
 export default function MapView({ mapType, showHeatmap, visibleLayers, searchQuery, onMapReady }: MapViewProps) {
@@ -80,39 +177,45 @@ export default function MapView({ mapType, showHeatmap, visibleLayers, searchQue
   const mapInstanceRef = useRef<any>(null);
   const layersRef = useRef<{ [key: string]: any }>({});
   const heatmapLayerRef = useRef<any>(null);
-  const markerLayersRef = useRef<{ [key: string]: any}>({});
   const searchMarkerRef = useRef<any>(null);
   const supabaseMarkersRef = useRef<any>(null);
   const proximityMarkerRef = useRef<any>(null);
+
+  // Estados para as tabelas do Supabase
+  const [locationData, setLocationData] = useState<LocationData[]>([]);
+  const [estacoesTremData, setEstacoesTremData] = useState<LocationData[]>([]);
+  const [estacoesMetroData, setEstacoesMetroData] = useState<LocationData[]>([]);
+  const [escolasFederaisData, setEscolasFederais] = useState<LocationData[]>([]);
+  const [escolasEstaduaisData, setEscolasEstaduais] = useState<LocationData[]>([]);
+  const [escolasMunicipaisData, setEscolasMunicipais] = useState<LocationData[]>([]);
+  const [pracasData, setPracas] = useState<LocationData[]>([]);
+  const [unidadeSaudeMunicipaisData, setUnidadesSaudeMunicipais] = useState<LocationData[]>([]);
+  const [gestaoEquipData, setGestaoEquip] = useState<LocationData[]>([]);
+  const [vltData, setVlt] = useState<LocationData[]>([]);
+  const [brtData, setBrt] = useState<LocationData[]>([]);
+  const [supermercadoData, setSupermercado] = useState<LocationData[]>([]);
   
   const [, setMapReady] = useState(false);
-  const [locationData, setLocationData] = useState<LocationData[]>([]);
   const [loading, setLoading] = useState(true);
   const [proximityData, setProximityData] = useState<ProximityData>({
-    escola: 0,
-    metro: 0,
-    hospital: 0,
+    escola: 5000,
+    altaCapacidade: 5000,
+    hospital: 5000,
     loading: false
   });
-  const [mousePos, setMousePos] = useState({ lat: 0, lng: 0, visible: false });
-  const lastFetchRef = useRef<{ lat: number; lng: number } | null>(null);
+  const [mousePos, setMousePos] = useState({ x:0, y:0, lat: 0, lng: 0, visible: false });
   const proximityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const { data, error } = await supabase
-          .from('mcmv_database')
-          .select('*');
+        // ===== BUSCAR DADOS DE MCMV-DATABASE =====
+        const mcmvData = await fetchWithCache('/api/locations', 'locations_cache');
+        if (mcmvData) {
 
-        if (error) {
-          console.error('Erro ao buscar dados:', error);
-          setLoading(false);
-          return;
-        }
-
-        if (data) {
-          const formattedData: LocationData[] = data.map((item: any) => ({
+          const formattedData: LocationData[] = mcmvData.map((item: any) => ({
             id: item.id,
             endereco: item.endereco || item['Endereço'] || '',
             bairro: item.bairro || item['Bairro'] || '',
@@ -131,6 +234,254 @@ export default function MapView({ mapType, showHeatmap, visibleLayers, searchQue
 
           setLocationData(formattedData);
         }
+
+        // // ===== BUSCAR DADOS DE ESTAÇÕES DE TREM =====
+        const trainData = await fetchWithCache('/api/train-stations', 'train_stations_cache');
+
+        if (trainData) {
+          const formattedEstacoesTrem: LocationData[] = trainData.map((item: any) => ({
+            id: item.id,
+            endereco: item.endereco || item['Endereço'] || item.nome || '',
+            bairro: item.bairro || item['Bairro'] || '',
+            processo: '',
+            latitude: parseFloat(item.latitude || 0),
+            longitude: parseFloat(item.longitude || 0),
+            tipoDeUso: 'Estação de Trem',
+            tituloDoProjetо: item.nome || '',
+            construtora: '',
+            status: 'ativo',
+            licenca: '',
+            dataLicenca: '',
+            ...item
+          }));
+
+          setEstacoesTremData(formattedEstacoesTrem);
+        }
+
+        // // ===== BUSCAR DADOS DE ESTAÇÕES DE METRO =====
+        const metroData = await fetchWithCache('/api/metro-stations', 'metro_stations_cache')
+
+        if (metroData) {
+          const formattedEstacoesMetro: LocationData[] = metroData.map((item: any) => ({
+            id: item.id,
+            endereco: item.endereco || item['Endereço'] || item.nome || '',
+            bairro: item.bairro || item['Bairro'] || '',
+            processo: '',
+            latitude: parseFloat(item.latitude || 0),
+            longitude: parseFloat(item.longitude || 0),
+            tipoDeUso: 'Estação de Trem',
+            tituloDoProjetо: item.nome || '',
+            construtora: '',
+            status: 'ativo',
+            licenca: '',
+            dataLicenca: '',
+            ...item
+          }));
+
+          setEstacoesMetroData(formattedEstacoesMetro);
+        }
+
+        // ===== BUSCAR DADOS DE ESCOLAS FEDERAIS =====
+        const federalSchools = await fetchWithCache('/api/federal-schools', 'federal_schools_cache')
+
+        if (federalSchools) {
+          const formattedEscolasFederais: LocationData[] = federalSchools.map((item: any) => ({
+            id: item.id,
+            endereco: item.endereco || item['Endereço'] || item.nome || '',
+            bairro: item.bairro || item['Bairro'] || '',
+            processo: '',
+            latitude: parseFloat(item.latitude || 0),
+            longitude: parseFloat(item.longitude || 0),
+            tipoDeUso: 'Estação de Trem',
+            tituloDoProjetо: item.nome || '',
+            construtora: '',
+            status: 'ativo',
+            licenca: '',
+            dataLicenca: '',
+            ...item
+          }));
+
+          setEscolasFederais(formattedEscolasFederais);
+        }
+
+        // ===== BUSCAR DADOS DE ESCOLAS ESTADUAIS =====
+        const stateSchools = await fetchWithCache('/api/state-schools', 'state_schools_cache')
+
+        if (stateSchools) {
+          const formattedEscolasEstaduais: LocationData[] = stateSchools.map((item: any) => ({
+            id: item.id,
+            endereco: item.endereco || item['Endereço'] || item.nome || '',
+            bairro: item.bairro || item['Bairro'] || '',
+            processo: '',
+            latitude: parseFloat(item.latitude || 0),
+            longitude: parseFloat(item.longitude || 0),
+            tipoDeUso: 'Estação de Trem',
+            tituloDoProjetо: item.nome || '',
+            construtora: '',
+            status: 'ativo',
+            licenca: '',
+            dataLicenca: '',
+            ...item
+          }));
+
+          setEscolasEstaduais(formattedEscolasEstaduais);
+        }
+
+        // ===== BUSCAR DADOS DE ESCOLAS MUNICIPAIS =====
+        const municipalSchools = await fetchWithCache('/api/municipal-schools', 'municipal_schools_cache')
+
+        if (municipalSchools) {
+          const formattedEscolasMunicipais: LocationData[] = municipalSchools.map((item: any) => ({
+            id: item.id,
+            endereco: item.endereco || item['Endereço'] || item.nome || '',
+            bairro: item.bairro || item['Bairro'] || '',
+            processo: '',
+            latitude: parseFloat(item.latitude || 0),
+            longitude: parseFloat(item.longitude || 0),
+            tipoDeUso: 'Estação de Trem',
+            tituloDoProjetо: item.nome || '',
+            construtora: '',
+            status: 'ativo',
+            licenca: '',
+            dataLicenca: '',
+            ...item
+          }));
+
+          setEscolasMunicipais(formattedEscolasMunicipais);
+        }
+
+        // ===== BUSCAR DADOS DE PRAÇAS =====
+        const squares = await fetchWithCache('/api/squares', 'squares_cache')
+
+        if (squares) {
+          const formattedPracas: LocationData[] = squares.map((item: any) => ({
+            id: item.id,
+            endereco: item.endereco || item['Endereço'] || item.nome || '',
+            bairro: item.bairro || item['Bairro'] || '',
+            processo: '',
+            latitude: parseFloat(item.latitude || 0),
+            longitude: parseFloat(item.longitude || 0),
+            tipoDeUso: 'Estação de Trem',
+            tituloDoProjetо: item.nome || '',
+            construtora: '',
+            status: 'ativo',
+            licenca: '',
+            dataLicenca: '',
+            ...item
+          })); 
+
+          setPracas(formattedPracas);
+        }
+
+        // ===== BUSCAR UNIDADES DE SAUDE MUNICIPAIS =====
+        const municipalHealthUnits = await fetchWithCache('/api/municipal-health-units', 'municipal_health_units_cache')
+
+        if (municipalHealthUnits) {
+          const formattedUnidadesSaudeMunicipais: LocationData[] = municipalHealthUnits.map((item: any) => ({
+            id: item.id,
+            endereco: item.endereco || item['Endereço'] || item.nome || '',
+            bairro: item.bairro || item['Bairro'] || '',
+            processo: '',
+            latitude: parseFloat(item.latitude || 0),
+            longitude: parseFloat(item.longitude || 0),
+            tipoDeUso: 'Estação de Trem',
+            tituloDoProjetо: item.nome || '',
+            construtora: '',
+            status: 'ativo',
+            licenca: '',
+            dataLicenca: '',
+            ...item
+          }));
+
+          setUnidadesSaudeMunicipais(formattedUnidadesSaudeMunicipais);
+          
+        }
+
+        // ===== BUSCAR UNIDADES DE GESTÃO DE EQUIPAMENTOS SMAS =====
+        const equips = await fetchWithCache('/api/equipments', 'equipments_cache')
+        if (equips) {
+          const formattedGestaoEquip: LocationData[] = equips.map((item: any) => ({
+            id: item.id,
+            endereco: item.endereco || item['Endereço'] || item.nome || '',
+            bairro: item.bairro || item['Bairro'] || '',
+            processo: '',
+            latitude: parseFloat(item.latitude || 0),
+            longitude: parseFloat(item.longitude || 0),
+            tipoDeUso: 'Estação de Trem',
+            tituloDoProjetо: item.nome || '',
+            construtora: '',
+            status: 'ativo',
+            licenca: '',
+            dataLicenca: '',
+            ...item
+          }));
+
+          setGestaoEquip(formattedGestaoEquip); 
+        }
+
+        //  // ===== BUSCAR PARADAS DE VLT =====
+        const vlts = await fetchWithCache('/api/vlt-stations', 'vlts_cache')
+        if (vlts) {
+          const formattedVlt: LocationData[] = vlts.map((item: any) => ({
+            id: item.id,
+            endereco: item.endereco || item['Endereço'] || item.nome || '',
+            bairro: item.bairro || item['Bairro'] || '',
+            processo: '',
+            latitude: parseFloat(item.latitude || 0),
+            longitude: parseFloat(item.longitude || 0),
+            tipoDeUso: 'Estação de Trem',
+            tituloDoProjetо: item.nome || '',
+            construtora: '',
+            status: 'ativo',
+            licenca: '',
+            dataLicenca: '',
+            ...item
+        }));
+        setVlt(formattedVlt);
+      }
+
+        //  // ===== BUSCAR SUPERMERCADOS =====
+        const supermarkets = await fetchWithCache('/api/supermarkets', 'supermarkets_cache')
+        if (supermarkets) {
+          const formattedSupermercados: LocationData[] = supermarkets.map((item: any) => ( {
+            id: item.id,
+            endereco: item.endereco || item['Endereço'] || item.nome || '',
+            bairro: item.bairro || item['Bairro'] || '',
+            processo: '',
+            latitude: parseFloat(item.latitude || 0),
+            longitude: parseFloat(item.longitude || 0),
+            tipoDeUso: 'Estação de Trem',
+            tituloDoProjetо: item.nome || '',
+            construtora: '',
+            status: 'ativo',
+            licenca: '',
+            dataLicenca: '',
+            ...item
+          }));
+          setSupermercado(formattedSupermercados);
+        }
+
+        //  // ===== BUSCAR PARADAS DE BRT =====
+        const brts = await fetchWithCache('/api/brt-stations', 'brts_cache')
+        if (brts) {
+          const formattedBrts: LocationData[] = brts.map((item: any) => ({
+            id: item.id,
+            endereco: item.endereco || item['Endereço'] || item.nome || '',
+            bairro: item.bairro || item['Bairro'] || '',
+            processo: '',
+            latitude: parseFloat(item.latitude || 0),
+            longitude: parseFloat(item.longitude || 0),
+            tipoDeUso: 'Estação de Trem',
+            tituloDoProjetо: item.nome || '',
+            construtora: '',
+            status: 'ativo',
+            licenca: '',
+            dataLicenca: '',
+            ...item
+          }));
+          setBrt(formattedBrts);
+        }
+
         setLoading(false);
       } catch (error) {
         console.error('Erro inesperado:', error);
@@ -141,70 +492,61 @@ export default function MapView({ mapType, showHeatmap, visibleLayers, searchQue
     fetchData();
   }, []);
 
-  const calcDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371000;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
-  };
+  
 
   const fetchProximityData = async (lat: number, lng: number) => {
+    if (loading) return;
+
     if (proximityTimeoutRef.current) {
       clearTimeout(proximityTimeoutRef.current);
     }
 
     proximityTimeoutRef.current = setTimeout(async () => {
       setProximityData(prev => ({ ...prev, loading: true }));
-
       try {
-        const { data: escolas } = await supabase
-          .from('escolas_municipais')
-          .select('latitude,longitude')
-          .not('latitude', 'is', null)
-          .not('longitude', 'is', null);
+      const distanciaEstacaoTrem = getMinDistanceFromData(
+        lat,
+        lng,
+        [...estacoesTremData, ...estacoesMetroData]
+      );
+      
+      // const todasEscolas = useMemo(
+      //   () => [
+      //     ...escolasEstaduaisData,
+      //     ...escolasFederaisData,
+      //     ...escolasMunicipaisData
+      //   ],
+      //   [escolasEstaduaisData, escolasMunicipaisData, escolasFederaisData]
+      // )
+      const distanciaEscola = getMinDistanceFromData(
+        lat,
+        lng,
+        [...escolasEstaduaisData,
+          ...escolasFederaisData,
+          ...escolasMunicipaisData]
+      );
 
-        let distanciaEscola = 5000;
-        if (escolas && escolas.length > 0) {
-          const distances = escolas.map((e: any) => calcDistance(lat, lng, e.latitude, e.longitude));
-          distanciaEscola = Math.min(...distances);
-        }
+      const distanciaHospital = getMinDistanceFromData(
+        lat,
+        lng,
+        unidadeSaudeMunicipaisData
+      );
 
-        const metroRes = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=train%20station&lat=${lat}&lon=${lng}&radius=3000&format=json&limit=1`
-        ).catch(() => ({ json: async () => [] }));
-        
-        const metroData = await metroRes.json();
-        let distanciaMetro = 5000;
-        if (Array.isArray(metroData) && metroData.length > 0) {
-          distanciaMetro = calcDistance(lat, lng, parseFloat(metroData[0].lat), parseFloat(metroData[0].lon));
-        }
 
-        const hospitalRes = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=hospital&lat=${lat}&lon=${lng}&radius=2000&format=json&limit=1`
-        ).catch(() => ({ json: async () => [] }));
-        
-        const hospitalData = await hospitalRes.json();
-        let distanciaHospital = 5000;
-        if (Array.isArray(hospitalData) && hospitalData.length > 0) {
-          distanciaHospital = calcDistance(lat, lng, parseFloat(hospitalData[0].lat), parseFloat(hospitalData[0].lon));
-        }
 
-        setProximityData({
-          escola: Math.round(distanciaEscola),
-          metro: Math.round(distanciaMetro),
-          hospital: Math.round(distanciaHospital),
-          loading: false
-        });
-      } catch (error) {
-        console.error('Erro ao buscar proximidade:', error);
-        setProximityData(prev => ({ ...prev, loading: false }));
-      }
-    }, 300);
-  };
+      setProximityData({
+        altaCapacidade: distanciaEstacaoTrem,
+        escola: distanciaEscola,
+        hospital: distanciaHospital,
+        loading: false
+      });
+
+    } catch (error) {
+      console.error('Erro ao calcular proximidade:', error);
+      setProximityData(prev => ({ ...prev, loading: false }));
+    }
+  }, 200);
+};
 
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current || !window.L) return;
@@ -229,35 +571,49 @@ export default function MapView({ mapType, showHeatmap, visibleLayers, searchQue
     setMapReady(true);
     onMapReady?.(map);
 
-    map.on('mousemove', (e: any) => {
-      setMousePos({
-        lat: e.latlng.lat,
-        lng: e.latlng.lng,
-        visible: true
-      });
-      
-      if (proximityMarkerRef.current) {
-        map.removeLayer(proximityMarkerRef.current);
-      }
-      
-      if (window.L.circleMarker) {
-        proximityMarkerRef.current = window.L.circleMarker([e.latlng.lat, e.latlng.lng], {
-          radius: 4,
-          color: '#000',
-          weight: 2,
-          opacity: 1,
-          fillColor: '#fff',
-          fillOpacity: 1
-        }).addTo(map);
-      }
+    const updateProximity = (e: any, isMobile = false) => {
+  setMousePos({
+    x: isMobile ? window.innerWidth / 2 : e.containerPoint.x,
+    y: isMobile ? window.innerHeight * 0.55 : e.containerPoint.y,
+    lat: e.latlng.lat,
+    lng: e.latlng.lng,
+    visible: true
+  });
 
-      fetchProximityData(e.latlng.lat, e.latlng.lng);
+  if (proximityMarkerRef.current) {
+    map.removeLayer(proximityMarkerRef.current);
+  }
+
+  proximityMarkerRef.current = window.L.circleMarker(
+    [e.latlng.lat, e.latlng.lng],
+    {
+      radius: 5,
+      color: '#000',
+      weight: 2,
+      fillColor: '#fff',
+      fillOpacity: 1
+    }
+  ).addTo(map);
+
+  fetchProximityData(e.latlng.lat, e.latlng.lng);
+};
+
+    map.on('mousemove', (e: any) => {
+    if (window.innerWidth < 640) return;
+      updateProximity(e, false);
+    });
+
+    map.on('click', (e: any) => {
+      if (window.innerWidth >= 640) return;
+      updateProximity(e, true);
     });
 
     map.on('mouseout', () => {
-      setMousePos(prev => ({ ...prev, visible: false }));
-      if (proximityMarkerRef.current) {
-        map.removeLayer(proximityMarkerRef.current);
+  if (window.innerWidth < 640) return; // ❗ NÃO esconder no mobile
+
+  setMousePos(prev => ({ ...prev, visible: false }));
+  if (proximityMarkerRef.current) {
+    map.removeLayer(proximityMarkerRef.current);
       }
     });
 
@@ -267,18 +623,28 @@ export default function MapView({ mapType, showHeatmap, visibleLayers, searchQue
     };
   }, []);
 
+  
   useEffect(() => {
-    if (!mapInstanceRef.current || locationData.length === 0) return;
+    if (!mapInstanceRef.current || !window.L?.markerClusterGroup) return;
 
     if (supabaseMarkersRef.current) {
       mapInstanceRef.current.removeLayer(supabaseMarkersRef.current);
     }
 
-    const markersGroup = window.L.featureGroup();
+    // Criar grupo de clustering
+    const markerClusterGroup = window.L.markerClusterGroup({
+      maxClusterRadius: 60,
+      disableClusteringAtZoom: 17
+    });
 
+    // ===== ADICIONAR MARCADORES DE MCMV-DATABASE =====
     locationData.forEach((location) => {
-      if (location.latitude && location.longitude) {
-        const popup = `
+      if (
+          typeof location.latitude === 'number' &&
+          typeof location.longitude === 'number'
+        ) {         
+          
+          const popup = `
           <div style="font-size: 12px; width: 250px;">
             <b>${location.endereco}</b><br/>
             <strong>Bairro:</strong> ${location.bairro}<br/>
@@ -295,16 +661,290 @@ export default function MapView({ mapType, showHeatmap, visibleLayers, searchQue
         const color = location.status?.includes('enquadrado') ? '#22c55e' : '#ef4444';
         
         const marker = window.L.marker([location.latitude, location.longitude], {
-          icon: createIcon(color)
+          icon: createIcon('#ccc', '🏢')
         }).bindPopup(popup, { maxWidth: 300 });
 
-        marker.addTo(markersGroup);
+        markerClusterGroup.addLayer(marker);
       }
     });
 
-    markersGroup.addTo(mapInstanceRef.current);
-    supabaseMarkersRef.current = markersGroup;
-  }, [locationData]);
+    // ===== ADICIONAR MARCADORES DE ESTAÇÕES DE TREM =====
+    estacoesTremData.forEach((estacao) => {
+      if (
+          typeof estacao.latitude === 'number' &&
+          typeof estacao.longitude === 'number'
+        ) {         
+          const popup = `
+          <div style="font-size: 12px; width: 250px;">
+          <h1 style="font-size: 16px;">Estação de trem:</h1>
+            <b>${estacao.Estação}</b><br/>
+            <strong>Rua:</strong> ${estacao.rua}<br/>
+            <strong>Presente nos ramais:</strong> ${estacao.presencaRamais}<br/>
+          </div>
+        `;
+
+        const marker = window.L.marker([estacao.latitude, estacao.longitude], {
+          icon: createIcon('#8b5cf6', '🚆') // Roxo para estações de trem
+        }).bindPopup(popup, { maxWidth: 300 });
+
+        markerClusterGroup.addLayer(marker);
+      }
+    });
+
+    // ===== ADICIONAR MARCADORES DE ESTAÇÕES DE METRO =====
+    estacoesMetroData.forEach((estacao) => {
+      if (
+          typeof estacao.latitude === 'number' &&
+          typeof estacao.longitude === 'number'
+        ) {          
+          const popup = `
+          <div style="font-size: 12px; width: 250px;">
+            <h1 style="font-size: 16px;">Estação de metrô:</h1>
+            <b>${estacao.nome}</b>
+          </div>
+        `;
+
+        const marker = window.L.marker([estacao.latitude, estacao.longitude], {
+          icon: createIcon('#00e5ff', '🚇') // Roxo para estações de trem
+        }).bindPopup(popup, { maxWidth: 300 });
+
+        markerClusterGroup.addLayer(marker);
+      }
+    });
+
+    // ===== ADICIONAR MARCADORES DE ESCOLAS FEDERAIS =====
+    escolasFederaisData.forEach((escola) => {
+      if (
+          typeof escola.latitude === 'number' &&
+          typeof escola.longitude === 'number'
+        ) {  
+          const popup = `
+          <div style="font-size: 12px; width: 250px;">
+            <h1 style="font-size: 16px;">Escola federal:</h1>
+            <b>${escola.unidade}</b><br/>
+            <strong>Endereço:</strong> ${escola.endereco}<br/>
+            <strong>Zona:</strong> ${escola.zona}<br/>
+            <strong>Telefone:</strong> ${escola.telefone}
+          </div>
+        `;
+
+        const marker = window.L.marker([escola.latitude, escola.longitude], {
+          icon: createIcon('#003cff', '🏫') // Roxo para estações de trem
+        }).bindPopup(popup, { maxWidth: 300 });
+
+        markerClusterGroup.addLayer(marker);
+      }
+    });
+
+    // ===== ADICIONAR MARCADORES DE ESCOLAS ESTADUAIS =====
+    escolasEstaduaisData.forEach((escola) => {
+      if (
+          typeof escola.latitude === 'number' &&
+          typeof escola.longitude === 'number'
+        ) {        
+          const popup = `
+          <div style="font-size: 12px; width: 250px;">
+            <h1 style="font-size: 16px;">Escola estadual:</h1>
+            <b>${escola.unidade}</b><br/>
+            <strong>Endereço:</strong> ${escola.endereco}<br/>
+            <strong>Zona:</strong> ${escola.zona}<br/>
+            <strong>Telefone:</strong> ${escola.telefone}
+          </div>
+        `;
+
+        const marker = window.L.marker([escola.latitude, escola.longitude], {
+          icon: createIcon('#00eeff', '🏫') // Roxo para estações de trem
+        }).bindPopup(popup, { maxWidth: 300 });
+
+        markerClusterGroup.addLayer(marker);
+      }
+    });
+
+    // ===== ADICIONAR MARCADORES DE ESCOLAS MUNICIPAIS =====
+    escolasMunicipaisData.forEach((escola) => {
+      if (
+          typeof escola.latitude === 'number' &&
+          typeof escola.longitude === 'number'
+        ) {        
+          const popup = `
+          <div style="font-size: 12px; width: 250px;">
+            <h1 style="font-size: 16px;">Escola municipal:</h1>
+            <b>${escola.nome}</b><br/>
+            <strong>Tipo:</strong> ${escola.tipo}
+          </div>
+        `;
+
+        const marker = window.L.marker([escola.latitude, escola.longitude], {
+          icon: createIcon('#00ff0d', '🏫') // Roxo para estações de trem
+        }).bindPopup(popup, { maxWidth: 300 });
+
+        markerClusterGroup.addLayer(marker);
+      }
+    });
+
+    // ===== ADICIONAR MARCADORES DE PRAÇAS =====
+    pracasData.forEach((praca) => {
+      if (
+          typeof praca.latitude === 'number' &&
+          typeof praca.longitude === 'number'
+        ) {
+        const popup = `
+          <div style="font-size: 12px; width: 250px;">
+            <h1 style="font-size: 16px;">Praça:</h1>
+            <b>${praca.nomeCompleto}</b><br/>
+            <strong>Endereço:</strong> ${praca.endereco}<br/>
+            <strong>Ap:</strong> ${praca.ap}
+          </div>
+        `;
+
+        const marker = window.L.marker([praca.latitude, praca.longitude], {
+          icon: createIcon('#ff00d4', '⛲') // Roxo para estações de trem
+        }).bindPopup(popup, { maxWidth: 300 });
+
+        markerClusterGroup.addLayer(marker);
+      }
+    });
+
+    // ===== ADICIONAR MARCADORES DE UNIDADES DE SAUDE MUNICIPAIS =====
+    unidadeSaudeMunicipaisData.forEach((unidadeSaude) => {
+      if (
+          typeof unidadeSaude.latitude === 'number' &&
+          typeof unidadeSaude.longitude === 'number'
+        ) 
+        { 
+        const popup = `
+          <div style="font-size: 12px; width: 250px;">
+            <b>${unidadeSaude.NOME}</b><br/>
+            <strong>Endereço:</strong> ${unidadeSaude.ENDERECO}<br/>
+            <strong>Bairro:</strong> ${unidadeSaude.BAIRRO}<br/>
+            <strong>Tipo de unidade:</strong> ${unidadeSaude.TIPO_UNIDADE}<br/>
+            <strong>CNES:</strong> ${unidadeSaude.CNES}<br/>
+            <strong>Horário dia de semana:</strong> ${unidadeSaude.HORARIO_SEMANA}<br/>
+            <strong>Horário sábado:</strong> ${unidadeSaude.HORARIO_SABADO}<br/>
+            <strong>Email:</strong> ${unidadeSaude.EMAIL}<br/>
+            <strong>Telefone:</strong> ${unidadeSaude.TELEFONE}
+          </div>
+        `;
+
+        const marker = window.L.marker([unidadeSaude.latitude, unidadeSaude.longitude], { 
+          icon: createIcon('#000000', '🏥') // Roxo para estações de trem
+        }).bindPopup(popup, { maxWidth: 300 });
+
+        markerClusterGroup.addLayer(marker);
+      }
+    });
+
+// ===== ADICIONAR MARCADORES DE GESTÃO DE EQUIPAMENTOS SMAS =====
+    gestaoEquipData.forEach((gestaoEquip) => {
+      if (
+          typeof gestaoEquip.latitude === 'number' &&
+          typeof gestaoEquip.longitude === 'number'
+        ) {         
+          const popup = `
+          <div style="font-size: 12px; width: 250px;">
+            <h1 style="font-size: 16px;">Equip.:</h1>
+            <b>${gestaoEquip.nome_equip}</b><br/>
+            <strong>Endereço:</strong> ${gestaoEquip.endereco}<br/>
+            <strong>Bairro:</strong> ${gestaoEquip.bairro}<br/>
+            <strong>Bairros atendidos:</strong> ${gestaoEquip.bairros_at}<br/>
+            <strong>Hierarquia:</strong> ${gestaoEquip.hierarquia}
+            <strong>Telefone:</strong> ${gestaoEquip.telefone}<br/>
+          </div>
+        `;
+
+        const marker = window.L.marker([gestaoEquip.latitude, gestaoEquip.longitude], { 
+          icon: createIcon('#ffee00') // Roxo para estações de trem
+        }).bindPopup(popup, { maxWidth: 300 });
+
+        markerClusterGroup.addLayer(marker);
+      }
+    });
+
+    // ===== ADICIONAR MARCADORES DE PARADAS VLT =====
+    vltData.forEach((vlt) => {
+      if (
+          typeof vlt.latitude === 'number' &&
+          typeof vlt.longitude === 'number'
+        ) {         
+          const popup = `
+          <div style="font-size: 12px; width: 250px;">
+            <h1 style="font-size: 16px;">VLT:</h1>
+            <b>${vlt.nome}</b>
+          </div>
+        `;
+
+        const marker = window.L.marker([vlt.latitude, vlt.longitude], { 
+          icon: createIcon('#1900ff', '🚋') // Roxo para estações de trem
+        }).bindPopup(popup, { maxWidth: 300 });
+
+        markerClusterGroup.addLayer(marker);
+      }
+    });
+    
+    // ===== ADICIONAR MARCADORES DE PARADAS BRT =====
+    brtData.forEach((brt) => {
+      if (
+          typeof brt.latitude === 'number' &&
+          typeof brt.longitude === 'number'
+        ) {         
+          const popup = `
+          <div style="font-size: 12px; width: 250px;">
+            <h1 style="font-size: 16px;">BRT:</h1>
+            <b>${brt.nome}</b><br/>
+            <strong>Corredor:</strong> ${brt.corredor}
+          </div>
+        `;
+
+        const marker = window.L.marker([brt.latitude, brt.longitude], { 
+          icon: createIcon('#ff00a2', '🚌') // Roxo para estações de trem
+        }).bindPopup(popup, { maxWidth: 300 });
+
+        markerClusterGroup.addLayer(marker);
+      }
+    });
+
+    // ===== ADICIONAR MARCADORES DE SUPERMERCADOS =====
+    supermercadoData.forEach((supermercado) => {
+      if (
+          typeof supermercado.latitude === 'number' &&
+          typeof supermercado.longitude === 'number'
+        ) {         
+          const popup = `
+          <div style="font-size: 12px; width: 250px;">
+            <h1 style="font-size: 16px;">Supermercado:</h1>
+            <b>${supermercado.nome}</b>
+          </div>
+        `;
+
+        const marker = window.L.marker([supermercado.latitude, supermercado.longitude], { 
+          icon: createIcon('#d000ff', '🛒') 
+        }).bindPopup(popup, { maxWidth: 300,  });
+
+        markerClusterGroup.addLayer(marker);
+      }
+    });    
+    
+
+    markerClusterGroup.addTo(mapInstanceRef.current);
+    supabaseMarkersRef.current = markerClusterGroup;
+  }, [
+  locationData,
+  estacoesTremData,
+  estacoesMetroData,
+  escolasFederaisData,
+  escolasEstaduaisData,
+  escolasMunicipaisData,
+  pracasData,
+  unidadeSaudeMunicipaisData,
+  gestaoEquipData,
+  vltData,
+  brtData,
+  supermercadoData
+]);
+
+  
+
+  
 
   useEffect(() => {
     if (!mapInstanceRef.current) return;
@@ -350,32 +990,15 @@ export default function MapView({ mapType, showHeatmap, visibleLayers, searchQue
     }
   }, [showHeatmap, locationData]);
 
-  useEffect(() => {
-    if (!mapInstanceRef.current || !window.L) return;
-
-    Object.keys(markerLayersRef.current).forEach((layerKey) => {
-      if (!visibleLayers.has(layerKey)) {
-        mapInstanceRef.current.removeLayer(markerLayersRef.current[layerKey]);
-        delete markerLayersRef.current[layerKey];
-      }
-    });
-
-    visibleLayers.forEach((layerKey) => {
-      if (!markerLayersRef.current[layerKey] && POINTS_DATA[layerKey]) {
-        const markersGroup = window.L.layerGroup();
-
-        POINTS_DATA[layerKey].forEach(([lat, lng, title]) => {
-          const marker = window.L.marker([lat, lng])
-            .bindPopup(`<b>${layerKey}</b><br>${title}`);
-
-          marker.addTo(markersGroup);
-        });
-
-        markersGroup.addTo(mapInstanceRef.current);
-        markerLayersRef.current[layerKey] = markersGroup;
-      }
-    });
-  }, [visibleLayers]);
+  const renderDistance = (
+  value: number | null,
+  loading: boolean
+): string => {
+  if (loading) return '—';
+  if (value == null) return '—';
+  if (value >= 5000) return '≥ 5 km';
+  return `${value} m`;
+};
 
   useEffect(() => {
     if (!mapInstanceRef.current || !searchQuery) return;
@@ -416,51 +1039,72 @@ export default function MapView({ mapType, showHeatmap, visibleLayers, searchQue
       <div ref={mapRef} className="w-full h-full" />
       
       {mousePos.visible && (
-        <div 
-          className="fixed bg-white shadow-lg rounded-lg p-4 z-50 border border-gray-200"
-          style={{
-            left: '50%',
-            top: '20px',
-            transform: 'translateX(-50%)',
-            minWidth: '320px'
-          }}
-        >
-          <div className="text-sm font-semibold mb-3 text-gray-700">
-            Proximidade
-          </div>
-          
-          <div className="space-y-2">
-            <div className="flex items-center justify-between p-2 bg-blue-50 rounded">
-              <div className="flex items-center gap-2">
-                <span className="text-lg">🏫</span>
-                <span className="font-medium text-gray-700">Escola próxima</span>
-              </div>
-              <span className="font-bold text-blue-600">
-                {proximityData.loading ? '...' : `${proximityData.escola}m`}
-              </span>
-            </div>
+  <div
+  className="
+    absolute
+    bg-white/90 backdrop-blur-md
+    border border-gray-200/70
+    shadow-[0_10px_30px_rgba(0,0,0,0.12)]
+    rounded-2xl
+    p-5
+    z-50
+    w-80
+    max-h-[35vh]
+    overflow-y-auto
+    pointer-events-none sm:pointer-events-auto
+  "
+  style={{
+    left: window.innerWidth < 640
+      ? '50%'
+      : Math.min(mousePos.x + 15, window.innerWidth - 320),
 
-            <div className="flex items-center justify-between p-2 bg-green-50 rounded">
-              <div className="flex items-center gap-2">
-                <span className="text-lg">🚇</span>
-                <span className="font-medium text-gray-700">Metro/Trem próximo</span>
-              </div>
-              <span className="font-bold text-green-600">
-                {proximityData.loading ? '...' : `${proximityData.metro}m`}
-              </span>
-            </div>
+    top: window.innerWidth < 640
+      ? '75%'
+      : Math.min(mousePos.y + 15, window.innerHeight - 220),
 
-            <div className="flex items-center justify-between p-2 bg-red-50 rounded">
-              <div className="flex items-center gap-2">
-                <span className="text-lg">🏥</span>
-                <span className="font-medium text-gray-700">Hospital próximo</span>
-              </div>
-              <span className="font-bold text-red-600">
-                {proximityData.loading ? '...' : `${proximityData.hospital}m`}
-              </span>
-            </div>
-          </div>
-        </div>
+    transform: window.innerWidth < 640
+      ? 'translate(-50%, -50%)'
+      : 'none'
+  }}
+>
+          <div className="text-[12px] uppercase tracking-widest font-semibold text-gray-500 mb-3">
+  Proximidade
+</div>
+<div className="h-px w-full bg-gradient-to-r from-transparent via-gray-200 to-transparent mb-4" />
+
+          <div className="space-y-3 text-sm">
+            <div className="flex items-center justify-between">
+  <div className="flex items-center gap-3 text-gray-700">
+    <span className="text-base">🏫</span>
+    <span>Escola mais próxima</span>
+  </div>
+  <span className="font-semibold text-gray-900">
+  {renderDistance(proximityData.escola, proximityData.loading)}
+</span>
+</div>
+
+<div className="flex items-center justify-between">
+  <div className="flex items-center gap-3 text-gray-700">
+    <span className="text-base">🚇</span>
+    <span>Estação mais próxima</span>
+  </div>
+  <span className="font-semibold text-gray-900">
+  {renderDistance(proximityData.altaCapacidade, proximityData.loading)}
+</span>
+</div>
+
+<div className="flex items-center justify-between">
+  <div className="flex items-center gap-3 text-gray-700">
+    <span className="text-base">🏥</span>
+    <span>Hospital próximo</span>
+  </div>
+  <span className="font-semibold text-gray-900">
+  {renderDistance(proximityData.hospital, proximityData.loading)}
+</span>
+</div>
+</div>
+</div>
+        
       )}
 
       {loading && (
